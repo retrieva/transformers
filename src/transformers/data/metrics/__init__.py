@@ -54,7 +54,9 @@ if _has_sklearn:
         return classification_report(preds, labels, target_names=str_labels, output_dict=True)
 
     def glue_compute_metrics(task_name, preds, labels):
-        assert len(preds) == len(labels)
+        assert len(preds) == len(
+            labels
+        ), f"Predictions and labels have mismatched lengths {len(preds)} and {len(labels)}"
         if task_name == "cola":
             return {"mcc": matthews_corrcoef(labels, preds)}
         elif task_name == "sst-2":
@@ -66,14 +68,16 @@ if _has_sklearn:
         elif task_name == "qqp":
             return acc_and_f1(preds, labels)
         elif task_name == "mnli":
-            return {"acc": simple_accuracy(preds, labels)}
+            return {"mnli/acc": simple_accuracy(preds, labels)}
         elif task_name == "mnli-mm":
-            return {"acc": simple_accuracy(preds, labels)}
+            return {"mnli-mm/acc": simple_accuracy(preds, labels)}
         elif task_name == "qnli":
             return {"acc": simple_accuracy(preds, labels)}
         elif task_name == "rte":
             return {"acc": simple_accuracy(preds, labels)}
         elif task_name == "wnli":
+            return {"acc": simple_accuracy(preds, labels)}
+        elif task_name == "hans":
             return {"acc": simple_accuracy(preds, labels)}
         else:
             raise KeyError(task_name)
@@ -84,7 +88,9 @@ if _has_sklearn:
             return clf_report(preds, labels, str_labels)
 
     def xnli_compute_metrics(task_name, preds, labels):
-        assert len(preds) == len(labels)
+        assert len(preds) == len(
+            labels
+        ), f"Predictions and labels have mismatched lengths {len(preds)} and {len(labels)}"
         if task_name == "xnli":
             return {"acc": simple_accuracy(preds, labels)}
         else:

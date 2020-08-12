@@ -384,8 +384,12 @@ def compute_predictions_logits(
     tokenizer,
 ):
     """Write final predictions to the json file and log-odds of null if needed."""
-    logger.info("Writing predictions to: %s" % (output_prediction_file))
-    logger.info("Writing nbest to: %s" % (output_nbest_file))
+    if output_prediction_file:
+        logger.info(f"Writing predictions to: {output_prediction_file}")
+    if output_nbest_file:
+        logger.info(f"Writing nbest to: {output_nbest_file}")
+    if output_null_log_odds_file and version_2_with_negative:
+        logger.info(f"Writing null_log_odds to: {output_null_log_odds_file}")
 
     example_index_to_features = collections.defaultdict(list)
     for feature in all_features:
@@ -519,7 +523,7 @@ def compute_predictions_logits(
         if not nbest:
             nbest.append(_NbestPrediction(text="empty", start_logit=0.0, end_logit=0.0))
 
-        assert len(nbest) >= 1
+        assert len(nbest) >= 1, "No valid predictions"
 
         total_scores = []
         best_non_null_entry = None
@@ -540,7 +544,7 @@ def compute_predictions_logits(
             output["end_logit"] = entry.end_logit
             nbest_json.append(output)
 
-        assert len(nbest_json) >= 1
+        assert len(nbest_json) >= 1, "No valid predictions"
 
         if not version_2_with_negative:
             all_predictions[example.qas_id] = nbest_json[0]["text"]
@@ -554,13 +558,15 @@ def compute_predictions_logits(
                 all_predictions[example.qas_id] = best_non_null_entry.text
         all_nbest_json[example.qas_id] = nbest_json
 
-    with open(output_prediction_file, "w") as writer:
-        writer.write(json.dumps(all_predictions, indent=4) + "\n")
+    if output_prediction_file:
+        with open(output_prediction_file, "w") as writer:
+            writer.write(json.dumps(all_predictions, indent=4) + "\n")
 
-    with open(output_nbest_file, "w") as writer:
-        writer.write(json.dumps(all_nbest_json, indent=4) + "\n")
+    if output_nbest_file:
+        with open(output_nbest_file, "w") as writer:
+            writer.write(json.dumps(all_nbest_json, indent=4) + "\n")
 
-    if version_2_with_negative:
+    if output_null_log_odds_file and version_2_with_negative:
         with open(output_null_log_odds_file, "w") as writer:
             writer.write(json.dumps(scores_diff_json, indent=4) + "\n")
 
@@ -733,8 +739,8 @@ def compute_predictions_log_probs(
             output["end_log_prob"] = entry.end_log_prob
             nbest_json.append(output)
 
-        assert len(nbest_json) >= 1
-        assert best_non_null_entry is not None
+        assert len(nbest_json) >= 1, "No valid predictions"
+        assert best_non_null_entry is not None, "No valid predictions"
 
         score_diff = score_null
         scores_diff_json[example.qas_id] = score_diff

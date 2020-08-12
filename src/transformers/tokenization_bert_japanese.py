@@ -19,6 +19,7 @@ import collections
 import logging
 import os
 import unicodedata
+from typing import Optional
 
 from .tokenization_bert import BasicTokenizer, BertTokenizer, WordpieceTokenizer, load_vocab
 
@@ -29,37 +30,37 @@ VOCAB_FILES_NAMES = {"vocab_file": "vocab.txt"}
 
 PRETRAINED_VOCAB_FILES_MAP = {
     "vocab_file": {
-        "bert-base-japanese": "https://s3.amazonaws.com/models.huggingface.co/bert/cl-tohoku/bert-base-japanese-vocab.txt",
-        "bert-base-japanese-whole-word-masking": "https://s3.amazonaws.com/models.huggingface.co/bert/cl-tohoku/bert-base-japanese-whole-word-masking-vocab.txt",
-        "bert-base-japanese-char": "https://s3.amazonaws.com/models.huggingface.co/bert/cl-tohoku/bert-base-japanese-char-vocab.txt",
-        "bert-base-japanese-char-whole-word-masking": "https://s3.amazonaws.com/models.huggingface.co/bert/cl-tohoku/bert-base-japanese-char-whole-word-masking-vocab.txt",
+        "cl-tohoku/bert-base-japanese": "https://s3.amazonaws.com/models.huggingface.co/bert/cl-tohoku/bert-base-japanese/vocab.txt",
+        "cl-tohoku/bert-base-japanese-whole-word-masking": "https://s3.amazonaws.com/models.huggingface.co/bert/cl-tohoku/bert-base-japanese-whole-word-masking/vocab.txt",
+        "cl-tohoku/bert-base-japanese-char": "https://s3.amazonaws.com/models.huggingface.co/bert/cl-tohoku/bert-base-japanese-char/vocab.txt",
+        "cl-tohoku/bert-base-japanese-char-whole-word-masking": "https://s3.amazonaws.com/models.huggingface.co/bert/cl-tohoku/bert-base-japanese-char-whole-word-masking/vocab.txt",
     }
 }
 
 PRETRAINED_POSITIONAL_EMBEDDINGS_SIZES = {
-    "bert-base-japanese": 512,
-    "bert-base-japanese-whole-word-masking": 512,
-    "bert-base-japanese-char": 512,
-    "bert-base-japanese-char-whole-word-masking": 512,
+    "cl-tohoku/bert-base-japanese": 512,
+    "cl-tohoku/bert-base-japanese-whole-word-masking": 512,
+    "cl-tohoku/bert-base-japanese-char": 512,
+    "cl-tohoku/bert-base-japanese-char-whole-word-masking": 512,
 }
 
 PRETRAINED_INIT_CONFIGURATION = {
-    "bert-base-japanese": {
+    "cl-tohoku/bert-base-japanese": {
         "do_lower_case": False,
         "word_tokenizer_type": "mecab",
         "subword_tokenizer_type": "wordpiece",
     },
-    "bert-base-japanese-whole-word-masking": {
+    "cl-tohoku/bert-base-japanese-whole-word-masking": {
         "do_lower_case": False,
         "word_tokenizer_type": "mecab",
         "subword_tokenizer_type": "wordpiece",
     },
-    "bert-base-japanese-char": {
+    "cl-tohoku/bert-base-japanese-char": {
         "do_lower_case": False,
         "word_tokenizer_type": "mecab",
         "subword_tokenizer_type": "character",
     },
-    "bert-base-japanese-char-whole-word-masking": {
+    "cl-tohoku/bert-base-japanese-char-whole-word-masking": {
         "do_lower_case": False,
         "word_tokenizer_type": "mecab",
         "subword_tokenizer_type": "character",
@@ -89,6 +90,7 @@ class BertJapaneseTokenizer(BertTokenizer):
         pad_token="[PAD]",
         cls_token="[CLS]",
         mask_token="[MASK]",
+        mecab_kwargs=None,
         **kwargs
     ):
         """Constructs a MecabBertTokenizer.
@@ -106,6 +108,7 @@ class BertJapaneseTokenizer(BertTokenizer):
                 Type of word tokenizer.
             **subword_tokenizer_type**: (`optional`) string (default "wordpiece")
                 Type of subword tokenizer.
+            **mecab_kwargs**: (`optional`) dict passed to `MecabTokenizer` constructor (default None)
         """
         super(BertTokenizer, self).__init__(
             unk_token=unk_token,
@@ -115,8 +118,7 @@ class BertJapaneseTokenizer(BertTokenizer):
             mask_token=mask_token,
             **kwargs,
         )
-        self.max_len_single_sentence = self.max_len - 2  # take into account special tokens
-        self.max_len_sentences_pair = self.max_len - 3  # take into account special tokens
+        # ^^ We call the grandparent's init, not the parent's.
 
         if not os.path.isfile(vocab_file):
             raise ValueError(
@@ -133,7 +135,9 @@ class BertJapaneseTokenizer(BertTokenizer):
                     do_lower_case=do_lower_case, never_split=never_split, tokenize_chinese_chars=False
                 )
             elif word_tokenizer_type == "mecab":
-                self.word_tokenizer = MecabTokenizer(do_lower_case=do_lower_case, never_split=never_split)
+                self.word_tokenizer = MecabTokenizer(
+                    do_lower_case=do_lower_case, never_split=never_split, **(mecab_kwargs or {})
+                )
             else:
                 raise ValueError("Invalid word_tokenizer_type '{}' is specified.".format(word_tokenizer_type))
 
@@ -160,10 +164,10 @@ class BertJapaneseTokenizer(BertTokenizer):
         return split_tokens
 
 
-class MecabTokenizer(object):
+class MecabTokenizer:
     """Runs basic tokenization with MeCab morphological parser."""
 
-    def __init__(self, do_lower_case=False, never_split=None, normalize_text=True):
+    def __init__(self, do_lower_case=False, never_split=None, normalize_text=True, mecab_option: Optional[str] = None):
         """Constructs a MecabTokenizer.
 
         Args:
@@ -175,14 +179,20 @@ class MecabTokenizer(object):
                 List of token not to split.
             **normalize_text**: (`optional`) boolean (default True)
                 Whether to apply unicode normalization to text before tokenization.
+            **mecab_option**: (`optional`) string passed to `MeCab.Tagger` constructor (default "")
         """
         self.do_lower_case = do_lower_case
         self.never_split = never_split if never_split is not None else []
         self.normalize_text = normalize_text
 
-        import MeCab
+        import fugashi
+        import ipadic
 
-        self.mecab = MeCab.Tagger()
+        # Use ipadic by default (later options can override it)
+        mecab_option = mecab_option or ""
+        mecab_option = ipadic.MECAB_ARGS + " " + mecab_option
+
+        self.mecab = fugashi.GenericTagger(mecab_option)
 
     def tokenize(self, text, never_split=None, **kwargs):
         """Tokenizes a piece of text."""
@@ -192,21 +202,13 @@ class MecabTokenizer(object):
         never_split = self.never_split + (never_split if never_split is not None else [])
         tokens = []
 
-        mecab_output = self.mecab.parse(text)
+        for word in self.mecab(text):
+            token = word.surface
 
-        cursor = 0
-        for line in mecab_output.split("\n"):
-            if line == "EOS":
-                break
-
-            token, _ = line.split("\t")
-            token_start = text.index(token, cursor)
-            token_end = token_start + len(token)
             if self.do_lower_case and token not in never_split:
                 token = token.lower()
 
             tokens.append(token)
-            cursor = token_end
 
         return tokens
 
