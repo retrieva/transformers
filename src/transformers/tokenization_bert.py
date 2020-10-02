@@ -193,11 +193,16 @@ class BertTokenizer(PreTrainedTokenizer):
             **kwargs,
         )
 
-        if not os.path.isfile(vocab_file):
+        if (not vocab_file is None) and (not os.path.isfile(vocab_file)):
             raise ValueError(
                 "Can't find a vocabulary file at path '{}'. To load the vocabulary from a Google pretrained "
                 "model use `tokenizer = BertTokenizer.from_pretrained(PRETRAINED_MODEL_NAME)`".format(vocab_file))
-        if sp_model_file is None or not(vocab_file.endswith(".model")):
+        if (not sp_model_file is None) and (not os.path.isfile(sp_model_file)):
+            raise ValueError(
+                "Can't find a vocabulary file at path '{}'.")
+
+
+        if sp_model_file is None  or (not vocab_file is None and vocab_file.endwith(".model")):
             self.spm_tokenize = False
             self.vocab = load_vocab(vocab_file)
             self.ids_to_tokens = collections.OrderedDict(
@@ -255,21 +260,21 @@ class BertTokenizer(PreTrainedTokenizer):
         return dict(self.vocab, **self.added_tokens_encoder)
 
     def _tokenize(self, text):
-        split_tokens = []
-        if self.do_basic_tokenize:
-            for token in self.basic_tokenizer.tokenize(text, never_split=self.all_special_tokens):
-
-                # If the token is part of the never_split set
-                if token in self.basic_tokenizer.never_split:
-                    split_tokens.append(token)
-                else:
-                    split_tokens += self.wordpiece_tokenizer.tokenize(token)
+        if self.spm_tokenize:
+            text = convert_to_unicode(text)
+            if self.do_lower_case:
+                text = text.lower()
+            split_tokens = self.sp_model.EncodeAsPieces(text)
         else:
             split_tokens = []
             if self.do_basic_tokenize:
                 for token in self.basic_tokenizer.tokenize(text, never_split=self.all_special_tokens):
-                    for sub_token in self.wordpiece_tokenizer.tokenize(token):
-                        split_tokens.append(sub_token)
+
+                    # If the token is part of the never_split set
+                    if token in self.basic_tokenizer.never_split:
+                        split_tokens.append(token)
+                    else:
+                        split_tokens += self.wordpiece_tokenizer.tokenize(token)
             else:
                 split_tokens = self.wordpiece_tokenizer.tokenize(text)
         return split_tokens
